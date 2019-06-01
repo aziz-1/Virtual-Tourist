@@ -16,24 +16,20 @@ class MainViewController: UIViewController {
     @IBOutlet weak var mapView: MKMapView!
     var annotation = MKPointAnnotation()
     var dataController:DataController!
-    var fetchedPinFromContext:NSFetchedResultsController<Pin>!
     var fetchedResultsController:NSFetchedResultsController<Pin>!
    
     
     override func viewDidLoad() {
         super.viewDidLoad()
         mapView.delegate = self
-        let dummyPin = Pin()
-        dummyPin.latitude = 0.0
-        dummyPin.longitude = 0.0
-        dataController.context.insert(dummyPin)
-        try? dataController.context.save()
+        mapView.isZoomEnabled = false
         fetchPins()
-        addPinsToView()
-  
+        if let pins = fetchedResultsController.fetchedObjects {
+        addPinsToView(pins: pins)
+        }
+       
     }
     
-
     
     override func setEditing(_ editing: Bool, animated: Bool) {
         super.setEditing(editing, animated: animated)
@@ -41,26 +37,33 @@ class MainViewController: UIViewController {
     
 
     @IBAction func newPin(_ sender: UILongPressGestureRecognizer) {
+        
         let touchedPlace = sender.location(in: mapView)
         let coordinates = mapView.convert(touchedPlace, toCoordinateFrom: mapView)
-        
+        if sender.state == .ended {
         annotation.coordinate = coordinates
-      
-        addPinToContext(newPin: annotation)
+   
+            let pin = Pin(context: dataController.context)
+            pin.longitude = Double(annotation.coordinate.longitude)
+            pin.latitude = Double(annotation.coordinate.latitude)
+
+            
+            try? dataController.context.save()
+            addPinsToView(pins: [pin])
+            performSegue(withIdentifier: "collectionSegue", sender: pin)
+            
+        }
     }
     
-    func addPinToContext(newPin: MKPointAnnotation)
-    {
-        let pin = Pin(context: dataController.context)
-        pin.longitude = newPin.coordinate.longitude
-        pin.latitude = newPin.coordinate.latitude
-        try? dataController.context.save()
-    }
     
     func fetchPins() {
+  
         let fetchRequest:NSFetchRequest<Pin> = Pin.fetchRequest()
+        fetchRequest.sortDescriptors = []
         fetchedResultsController = NSFetchedResultsController(fetchRequest: fetchRequest, managedObjectContext: dataController.context, sectionNameKeyPath: nil, cacheName: nil)
+       
         fetchedResultsController.delegate = self
+        
         
         do {
             try fetchedResultsController.performFetch()
@@ -69,6 +72,34 @@ class MainViewController: UIViewController {
         }
     }
     
+    private func checkPin(pin: CLLocationCoordinate2D) -> Pin? {
+        let fetchRequest:NSFetchRequest<Pin> = Pin.fetchRequest()
+        fetchRequest.sortDescriptors = []
+        let predicate = NSPredicate(format: "latitude == %@ AND longitude == %@", argumentArray: [pin.latitude, pin.longitude])
+        fetchRequest.predicate = predicate
+        var pin: Pin?
+        do {
+         try pin = dataController.context.fetch(fetchRequest).first
+        } catch {
+           fatalError("The fetch could not be performed: \(error.localizedDescription)")
+        }
+        return pin
+    }
+    
+
+    
+     func addPinsToView(pins: [Pin]) {
+
+        for pin in pins {
+            let newAnnotation = MKPointAnnotation()
+            let latitude = Double(pin.latitude)
+            let longitude = Double(pin.longitude)
+            newAnnotation.coordinate = CLLocationCoordinate2DMake(latitude, longitude)
+            mapView.addAnnotation(newAnnotation)
+        }
+        mapView.showAnnotations(mapView.annotations, animated: true)
+        }
+
     override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
         if segue.destination is CollectionViewController {
             guard let pin = sender as? Pin else {
@@ -76,24 +107,8 @@ class MainViewController: UIViewController {
             }
             let vc = segue.destination as! CollectionViewController
             vc.pin = pin
+            vc.dataController = dataController
         }
-    }
-    
-    fileprivate func addPinsToView() {
-        let pins = fetchedResultsController.fetchedObjects
-        mapView.removeAnnotations(mapView.annotations)
-        
-        for pin in pins! {
-            addPinToContext(newPin: setupPins(pin: pin))
-        }
-    }
-    
-    func setupPins(pin: Pin) -> MKPointAnnotation
-    {
-        let pinHolder = MKPointAnnotation()
-        pinHolder.coordinate.longitude = pin.longitude
-        pinHolder.coordinate.latitude = pin.latitude
-        return pinHolder
     }
     
 }
@@ -129,14 +144,18 @@ extension MainViewController: MKMapViewDelegate {
         guard let annotation = view.annotation else {
             return
         }
-        
+    
         mapView.deselectAnnotation(annotation, animated: true)
-
-        
-        let pin = Pin(context: dataController.context)
-        pin.longitude = annotation.coordinate.longitude
-        pin.latitude = annotation.coordinate.latitude
+       
+        if let pin = checkPin(pin: annotation.coordinate) {
+   
         performSegue(withIdentifier: "collectionSegue", sender: pin)
+        }
+        else {
+           Utility.showAlert(message: "Not Found", controller: self)
+        }
+
+
     }
     
 }
@@ -153,13 +172,6 @@ extension MainViewController:NSFetchedResultsControllerDelegate {
         }
     }
     
-    func controllerWillChangeContent(_ controller: NSFetchedResultsController<NSFetchRequestResult>) {
-       addPinsToView()
-    }
-    
-    func controllerDidChangeContent(_ controller: NSFetchedResultsController<NSFetchRequestResult>) {
-         addPinsToView()
-    }
     
 }
 

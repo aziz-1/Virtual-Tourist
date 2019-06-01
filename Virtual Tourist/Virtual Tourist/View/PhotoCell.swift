@@ -11,9 +11,8 @@ import UIKit
 
 class PhotoCell: UICollectionViewCell {
     
-    static let id = "SentCollectionViewCell"
     
-    var photoUrl: String = ""
+    
     @IBOutlet weak var imageView: UIImageView!
     @IBOutlet weak var activityIndicator: UIActivityIndicatorView!
     
